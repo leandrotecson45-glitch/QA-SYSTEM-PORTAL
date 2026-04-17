@@ -11,7 +11,7 @@
   <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
 
   <style>
-    body { font-family: Arial; background:#0f172a; color:BLACK; text-align:center; }
+    body { font-family: Arial; background:WHITE; color:BLACK; text-align:center; }
     .box { margin:20px auto; padding:20px; background:SKYBLUE; border-radius:12px; width:95%; max-width:1100px; }
     input { padding:10px; margin:10px; width:80%; }
     button { padding:8px 12px; margin:2px; border:none; border-radius:6px; cursor:pointer; }
