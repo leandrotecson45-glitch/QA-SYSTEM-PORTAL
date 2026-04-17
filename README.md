@@ -17,12 +17,13 @@
     button { padding:8px 12px; margin:2px; border:none; border-radius:6px; cursor:pointer; }
     #map { height:450px; border-radius:10px; margin-top:15px; }
     table { width:100%; border-collapse: collapse; margin-top:15px; }
-    th, td { padding:8px; border:1px solid BLACK; font-size:12px; }
+    th, td { padding:8px; border:1px solid #334155; font-size:12px; }
     th { background:#0ea5e9; }
 
     .approved { background:#22c55e; color:black; }
     .rejected { background:#ef4444; color:white; }
     .pending { background:#facc15; color:black; }
+    .export { background:#38bdf8; color:black; font-weight:bold; }
   </style>
 </head>
 <body>
@@ -32,6 +33,7 @@
 <div class="box">
   <input type="file" id="jsonFile" accept=".json"><br>
   <button onclick="loadJSON()">Load Data</button>
+  <button class="export" onclick="downloadReport()">Download QA Report</button>
 </div>
 
 <div class="box">
@@ -67,8 +69,7 @@
 </div>
 
 <script>
-let map = L.map('map');
-map.setView([15.5,120.9],10);
+let map = L.map('map').setView([15.5,120.9],10);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
@@ -84,7 +85,6 @@ function loadJSON(){
   reader.onload=function(e){
     globalData=JSON.parse(e.target.result);
 
-    // add default status if missing
     globalData.photos.forEach(p=>{
       if(!p.status) p.status="PENDING";
     });
@@ -94,44 +94,54 @@ function loadJSON(){
   reader.readAsText(file);
 }
 
+function getActivePhotos(data){
+  // REJECTED photos are removed from computation (no KM, no rate)
+  return data.photos.filter(p => p.status !== "REJECTED");
+}
+
 function render(data){
   if(routingControl) map.removeControl(routingControl);
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
 
   let coords=[];
+  let activePhotos = getActivePhotos(data);
 
   data.photos.forEach((p,i)=>{
-    let latlng=[p.latitude,p.longitude];
-    coords.push(L.latLng(p.latitude,p.longitude));
-
-    let marker=L.marker(latlng).addTo(map)
+    let marker=L.marker([p.latitude,p.longitude]).addTo(map)
       .bindPopup(`<b>Point ${i+1}</b><br>${p.name}<br>${p.date} ${p.time}<br>Status: ${p.status}`);
-
     markers.push(marker);
   });
 
-  routingControl=L.Routing.control({
-    waypoints: coords,
-    addWaypoints:false,
-    draggableWaypoints:false,
-    routeWhileDragging:false,
-    router:L.Routing.osrmv1({
-      serviceUrl:'https://router.project-osrm.org/route/v1'
-    }),
-    createMarker:function(i,wp){
-      return L.marker(wp.latLng);
-    }
-  }).addTo(map);
-
-  routingControl.on('routesfound',function(e){
-    let route=e.routes[0];
-    let totalKm=route.summary.totalDistance/1000;
-    let amount=totalKm*10.4;
-
-    document.getElementById('distance').innerText="Total KM: "+totalKm.toFixed(2);
-    document.getElementById('amount').innerText="Amount: ₱"+amount.toFixed(2);
+  activePhotos.forEach(p=>{
+    coords.push(L.latLng(p.latitude,p.longitude));
   });
+
+  if(coords.length >= 2){
+    routingControl=L.Routing.control({
+      waypoints: coords,
+      addWaypoints:false,
+      draggableWaypoints:false,
+      routeWhileDragging:false,
+      router:L.Routing.osrmv1({
+        serviceUrl:'https://router.project-osrm.org/route/v1'
+      })
+    }).addTo(map);
+
+    routingControl.on('routesfound',function(e){
+      let route=e.routes[0];
+      let totalKm=route.summary.totalDistance/1000;
+
+      let rate=10.4;
+      let amount=totalKm*rate;
+
+      document.getElementById('distance').innerText="Total KM (Excluding Rejected): "+totalKm.toFixed(2);
+      document.getElementById('amount').innerText="Amount: ₱"+amount.toFixed(2);
+    });
+  } else {
+    document.getElementById('distance').innerText="Not enough valid points";
+    document.getElementById('amount').innerText="₱0.00";
+  }
 
   document.getElementById('fs').innerText="Field Supervisor: "+data.field_supervisor;
 
@@ -165,9 +175,32 @@ function render(data){
 }
 
 function setStatus(index,status){
-  if(!globalData) return;
   globalData.photos[index].status=status;
   render(globalData);
+}
+
+function downloadReport(){
+  if(!globalData) return alert("No data loaded");
+
+  let report={
+    field_supervisor: globalData.field_supervisor,
+    summary:{
+      approved:globalData.photos.filter(p=>p.status=="APPROVED").length,
+      rejected:globalData.photos.filter(p=>p.status=="REJECTED").length,
+      pending:globalData.photos.filter(p=>p.status=="PENDING").length
+    },
+    photos:globalData.photos
+  };
+
+  let blob=new Blob([JSON.stringify(report,null,2)],{type:"application/json"});
+  let url=URL.createObjectURL(blob);
+
+  let a=document.createElement("a");
+  a.href=url;
+  a.download="QA_REPORT.json";
+  a.click();
+
+  URL.revokeObjectURL(url);
 }
 </script>
 
